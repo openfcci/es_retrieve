@@ -1,0 +1,413 @@
+<?php
+
+/**
+ * @file es_retrieve.module
+ * Code for the Retrieve feature.
+ */
+include_once 'es_retrieve.features.inc';
+include_once 'es_retrieve.index.inc';
+
+/**
+ * Implements hook_permission().
+ */
+function es_retrieve_permission() {
+  return array(
+    'view elastic search results' => array(
+      'title' => t('View Elastic Search Results'),
+      'description' => t('Who gets to view Elastic Search Results?'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function es_retrieve_menu() {
+
+  $items['retrieve/%/%/%'] = array(
+    'page callback' => 'es_retrieve_get_results',
+    'page arguments' => array(1, 2, 3),
+    'access arguments' => array('view elastic search results'),
+  );
+
+  return $items;
+}
+
+/**
+ * Page callback from es_retrieve_menu().
+ */
+function es_retrieve_get_results($search_terms, $page, $sort) {
+// Prevent empty query from being sent to ElasticSearch
+  if (empty($search_terms)) {
+    return '';
+  }
+  // Build elastic search query
+  $url = _es_retrieve_make_url($page);
+  $post = _es_retrieve_make_post_fields($search_terms, $sort);
+  $raw_data = _es_retrieve_run_query($url, $post);
+  $deserialized_data = json_decode($raw_data);
+  _es_retrieve_set_count_of_results_static_variable($deserialized_data->hits->total);
+  $results = array();
+
+  foreach ($deserialized_data->hits->hits as $result) {
+    // set the snippet value
+    $snippet = !empty($result->_source->body[0]->summary) ? $result->_source->body[0]->summary : $result->_source->body[0]->value;
+
+    $results[] = array(
+      'link' => 'http://www.fccnn.com', // TODO: update link
+      'user' => 'John Lamb', // TODO: update author
+      'title' => isset($result->_source->title) ? $result->_source->title : '',
+      'date' => isset($result->_source->created) ? $result->_source->created : '',
+      'snippet' => isset($snippet) ? substr_replace(rtrim(substr($snippet, 0, 252), ' '), '...', 252) : '',
+      'image' => isset($result->_source->field_image) ? $result->_source->field_image[0]->url : '',
+    );
+  }
+
+  $themed_results = es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort);
+  return $themed_results;
+}
+
+/**
+ * Implementation of hook_preprocess_HOOK().
+ */
+function es_retrieve_preprocess_search_result(&$variables) {
+  $result = $variables['result'];
+  $variables['info_split']['image'] = $result['image'];
+}
+
+/**
+ * Creates theme for Elastic Search Results
+ * @return string
+ */
+function es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort) {
+  $output['prefix']['#markup'] = '<div class="search-results">';
+
+  foreach ($results as $result) {
+    $output[] = array(
+      '#theme' => 'search_result',
+      '#result' => $result,
+      '#module' => 'es_retrieve',
+    );
+  }
+
+  $output['suffix']['#markup'] = '</div>';
+
+  // Generate next page and back buttons to iterate results.
+  $prepped_search_terms = str_replace(' ', '%20', $search_terms);
+
+
+  if (intval($deserialized_data->hits->total) > 0 && intval($page) > 1) {
+    $previous = "http://" . $domain['subdomain'] . "/retrieve/" . htmlentities($prepped_search_terms) . "/" .
+        strval(intval($page) - 1 . "/" . check_plain($sort));
+    $previous_button = '<div class="fcc-paging"><a class="fcc-previous" href="' . $previous . '">Previous</a>';
+    $output['suffix']['#markup'] .= $previous_button;
+  }
+  else {
+    $output['suffix']['#markup'] .= '<div class="fcc-paging"><span class="fcc-first">Previous</span>';
+  }
+
+  if (intval($deserialized_data->hits->total) > intval($page * 15)) {
+    $next = "http://" . $domain['subdomain'] . "/retrieve/" . htmlentities($prepped_search_terms) . "/" .
+        strval(intval($page) + 1 . "/" . check_plain($sort));
+    $next_button = '<a class="fcc-next" href="' . $next . '">Next</a></div>';
+    $output['suffix']['#markup'] .= $next_button;
+  }
+  else {
+    $output['suffix']['#markup'] .= '<span class="fcc-last">Next</span></div>';
+  }
+
+  return $output;
+}
+
+/**
+ * Create a static variable listing the count of results from Elastic Search.
+ */
+function _es_retrieve_set_count_of_results_static_variable($num_found) {
+  $count = &drupal_static(__FUNCTION__);
+
+  if (!isset($count)) {
+    $count = number_format($num_found);
+  }
+
+  return $count;
+}
+
+/**
+ * Construct queries for Elastic Search.
+ */
+function _es_retrieve_make_url($page) {
+
+  // Get index name
+  $domain = domain_get_domain();
+  $domain_id = $domain['domain_id'];
+  $index = _es_retrieve_get_index_name($domain_id);
+
+  $search_host = '3590b9d403c87e0697b6:8c2e5209a1@f08f4b1b.qb0x.com';
+  $search_port = '30242';
+
+  $params = array(
+    'from' => (is_numeric($page) && $page > 1) ? ($page - 1) * 10 : 0,
+    'size' => 10,
+  );
+
+  $query = 'https://' . $search_host . ':' . $search_port . '/' . $index . '/_search?' . http_build_query($params);
+
+  return $query;
+}
+
+/**
+ * Construct postfields for Elastic Search.
+ */
+function _es_retrieve_make_post_fields($search_terms, $sort) {
+  if ($sort === 'relevance') { // Sort by relevancy.
+    $postfield = array(
+      'sort' => array('_score' => array('order' => 'desc')),
+      'query' => array(
+        'multi_match' => array(
+          'query' => $search_terms,
+          'type' => 'phrase',
+          'fields' => array('title', 'body.value'),
+          'boost' => 4,
+          'fuzziness' => 0,
+        )
+      ),
+    );
+  }
+  else { // Sort by date.
+    $postfield = array(
+      'sort' => array('created' => array('order' => 'asc')),
+      'query' => array(
+        'multi_match' => array(
+          'query' => $search_terms,
+          'type' => 'phrase',
+          'fields' => array('title', 'body.value'),
+          'boost' => 4,
+          'fuzziness' => 0,
+        )
+      ),
+    );
+  }
+  return json_encode($postfield);
+}
+
+/**
+ * Request query using cURL handler.
+ */
+function _es_retrieve_run_query($url, $post) {
+  var_dump($url);
+  var_dump($post);
+
+  $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL, $url);
+  curl_setopt($ch, CURLOPT_PORT, 30242);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+  curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+  curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+    'Content-Type: application/json',
+    'Content-Length: ' . strlen($post),
+  ));
+  $raw_data = curl_exec($ch);
+  curl_close($ch);
+
+  return $raw_data;
+}
+
+/**
+ * Implements hook_page_alter().
+ *
+ * Hide the duplicate search form on search results page.
+ *
+ * Reference: https://www.drupal.org/node/968002#comment-4573218.
+ */
+function es_retrieve_page_alter(&$page) {
+
+  // This assumes everything being output in the "content" page region.
+  // Logged in
+  if (!empty($page['content']['system_main']['content']['search_form'])) {
+
+    unset($page['content']['system_main']['content']['search_form']);
+  }
+
+  // Not logged in
+  if (!empty($page['content']['system_main']['search_form'])) {
+
+    unset($page['content']['system_main']['search_form']);
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function es_retrieve_block_info() {
+
+  $blocks['elastic_search_results_count'] = array(
+    'info' => t('Display the count of search results.'),
+    'cache' => DRUPAL_NO_CACHE
+  );
+
+  $blocks['elastic_search_modify_results'] = array(
+    'info' => t('Modify the search results.'),
+    'cache' => DRUPAL_NO_CACHE
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function es_retrieve_block_view($delta = '') {
+
+  $block = array();
+
+  switch ($delta) {
+
+    case 'elastic_search_results_count':
+      $block['subject'] = NULL;
+      $block['content'] = array(
+        '#type' => 'markup',
+        '#markup' => es_retrieve_get_search_results_count(),
+      );
+      break;
+
+    case 'elastic_search_modify_results':
+      $block['subject'] = NULL;
+      $block['content'] = drupal_get_form('es_retrieve_form');
+      break;
+  }
+
+  return $block;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function es_retrieve_theme($existing, $type, $theme, $path) {
+
+  $theme = array(
+    'search_result_count' => array(
+      'template' => 'es_retrieve_search_result_count_block',
+      'variables' => array(
+        'data' => NULL,
+        'title' => '',
+      ),
+    ),
+  );
+
+  return $theme;
+}
+
+/**
+ * Get the count of results from Elastic Search and display in a block so users feel safe
+ * that they are on a search page.
+ * @return string markup for the block that displays the count of search results.
+ */
+function es_retrieve_get_search_results_count() {
+  $data = array(
+    'count' => _es_retrieve_set_count_of_results_static_variable(0),
+  );
+  $themed_content = theme('search_result_count', $data);
+
+  return $themed_content;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function es_retrieve_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'search_block_form') {
+
+    // Override the default search_block_form submit function.
+    $form['#submit']['search_block_form'] = 'es_retrieve_elastic_search_form_submit';
+
+    // Put the search terms in the search form on the results page only.
+    $path = current_path();
+    $matches = preg_match("/(retrieve\\/.*\\/.*)/us", $path);
+
+    if (!empty($matches)) {
+      $exploded_path = explode('/', $path);
+      $middle = 1;
+      $search_terms = str_replace('retrieve/', '', $exploded_path[$middle]);
+      $form['search_block_form']['#default_value'] = $search_terms;
+    }
+  }
+}
+
+/**
+ * Much of this function was copied from search_box_form_submit of search.module.
+ */
+function es_retrieve_elastic_search_form_submit($form, &$form_state) {
+  // The search form relies on control of the redirect destination for its
+  // functionality, so we override any static destination set in the request,
+  // for example by drupal_access_denied() or drupal_not_found()
+  // (see http://drupal.org/node/292565).
+  if (isset($_GET['destination'])) {
+    unset($_GET['destination']);
+  }
+
+  // Check to see if the form was submitted empty.
+  // If it is empty, display an error message.
+  // (This method is used instead of setting #required to TRUE for this field
+  // because that results in a confusing error message.  It would say a plain
+  // "field is required" because the search keywords field has no title.
+  // The error message would also complain about a missing #title field.)
+  if ($form_state['values']['search_block_form'] == '') {
+    form_set_error('keys', t('Please enter some keywords.'));
+  }
+
+  $form_id = $form['form_id']['#value'];
+  // Redirect to the first page of Google Custom Search Results.
+  $form_state['redirect'] = 'retrieve/' . trim($form_state['values'][$form_id]) . '/' . 1 . '/date';
+}
+
+/**
+ * Implements hook_form().
+ */
+function es_retrieve_form($form, &$form_state) {
+  $path = current_path();
+  $exploded_path = explode('/', $path);
+  $sort = end($exploded_path);
+
+  $default_sort_value = ($sort === 'date') ? '1' : '0';
+
+  $display_order_options = array('0' => t('Relevancy'), '1' => t('Date'));
+
+  $form['retrieve']['relevancy'] = array(
+    '#type' => 'select',
+    '#options' => $display_order_options,
+    '#default_value' => $default_sort_value,
+    '#title' => 'Sorted by ',
+    '#prefix' => '<div class="retrieve-display-order">',
+    '#suffix' => '</div>',
+  );
+
+  $form['retrieve']['update_results'] = array(
+    '#type' => 'submit',
+    '#value' => 'Update',
+    '#prefix' => '<div class="retrieve-submit-button">',
+    '#suffix' => '</div>',
+  );
+
+  $form['#submit'][] = 'es_retrieve_form_submit';
+
+  return $form;
+}
+
+/**
+ * retrieve_relevancy form submit callback
+ */
+function es_retrieve_form_submit($form, &$form_state) {
+
+  $path = current_path();
+  $exploded_path = explode('/', $path);
+  $search_terms = $exploded_path[1];
+  $page = $exploded_path[2];
+
+  if ($form_state['input']['relevancy'] === '1') { // date sort
+    drupal_goto('retrieve/' . $search_terms . '/' . $page . '/date');
+  }
+  else { // Relevancy sort
+    drupal_goto('retrieve/' . $search_terms . '/' . $page . '/relevance');
+  }
+}

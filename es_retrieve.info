@@ -1,0 +1,11 @@
+name = ElasticSearch Retrieve
+description = Custom Elastic Search, settings for content type search include, and associated blocks.
+core = 7.x
+package = Features
+dependencies[] = block
+dependencies[] = ctools
+dependencies[] = features
+features[context][] = elastic_search
+features[ctools][] = context:context:3
+features[features_api][] = api:2
+features[node][] = elastic_search_include
