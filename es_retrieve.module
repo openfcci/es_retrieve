@@ -41,6 +41,8 @@ function es_retrieve_get_results($search_terms, $page, $sort) {
   if (empty($search_terms)) {
     return '';
   }
+  // Set domain
+  $domain = domain_get_domain();
   // Build elastic search query
   $url = _es_retrieve_make_url($page);
   $post = _es_retrieve_make_post_fields($search_terms, $sort);
