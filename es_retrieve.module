@@ -8,18 +8,6 @@ include_once 'es_retrieve.features.inc';
 include_once 'es_retrieve.index.inc';
 
 /**
- * Implements hook_permission().
- */
-function es_retrieve_permission() {
-  return array(
-    'view elastic search results' => array(
-      'title' => t('View Elastic Search Results'),
-      'description' => t('Who gets to view Elastic Search Results?'),
-    ),
-  );
-}
-
-/**
  * Implements hook_menu().
  */
 function es_retrieve_menu() {
@@ -27,7 +15,7 @@ function es_retrieve_menu() {
   $items['retrieve/%/%/%'] = array(
     'page callback' => 'es_retrieve_get_results',
     'page arguments' => array(1, 2, 3),
-    'access arguments' => array('view elastic search results'),
+    'access callback' => TRUE,
   );
 
   return $items;
@@ -38,35 +26,36 @@ function es_retrieve_menu() {
  */
 function es_retrieve_get_results($search_terms, $page, $sort) {
 // Prevent empty query from being sent to ElasticSearch
-  if (empty($search_terms)) {
-    return '';
-  }
-  // Set domain
-  $domain = domain_get_domain();
-  // Build elastic search query
-  $url = _es_retrieve_make_url($page);
-  $post = _es_retrieve_make_post_fields($search_terms, $sort);
-  $raw_data = _es_retrieve_run_query($url, $post);
-  $deserialized_data = json_decode($raw_data);
-  _es_retrieve_set_count_of_results_static_variable($deserialized_data->hits->total);
-  $results = array();
+    if (empty($search_terms)) {
+        return '';
+    }
+    $domain = domain_get_domain();
 
-  foreach ($deserialized_data->hits->hits as $result) {
-    // set the snippet value
-    $snippet = !empty($result->_source->body[0]->summary) ? $result->_source->body[0]->summary : $result->_source->body[0]->value;
+    // Build elastic search query
+    $url = _es_retrieve_make_url();
+    $post = _es_retrieve_make_post_fields($search_terms, $domain, $sort, $page);
+    $raw_data = _es_retrieve_run_query($url, $post);
+    $deserialized_data = json_decode($raw_data);
 
-    $results[] = array(
-      'link' => 'http://www.fccnn.com', // TODO: update link
-      'user' => 'John Lamb', // TODO: update author
-      'title' => isset($result->_source->title) ? $result->_source->title : '',
-      'date' => isset($result->_source->created) ? $result->_source->created : '',
-      'snippet' => isset($snippet) ? substr_replace(rtrim(substr($snippet, 0, 252), ' '), '...', 252) : '',
-      'image' => isset($result->_source->field_image) ? $result->_source->field_image[0]->url : '',
-    );
-  }
+    _es_retrieve_set_count_of_results_static_variable($deserialized_data->hits->total);
+    $results = array();
 
-  $themed_results = es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort);
-  return $themed_results;
+    foreach ($deserialized_data->hits->hits as $result) {
+        // set the snippet value
+        $snippet = !empty($result->_source->body->summary) ? $result->_source->body->summary : $result->_source->body->value;
+
+        $results[] = array(
+          'link' => url($result->_source->path->alias),
+          'user' => $result->_source->author->realname, // TODO: update author
+          'title' => isset($result->_source->title) ? $result->_source->title : '',
+          'date' => isset($result->_source->created) ? $result->_source->created : '',
+          'snippet' => isset($snippet) ? substr_replace(rtrim(substr($snippet, 0, 252), ' '), '...', 252) : '',
+          'image' => isset($result->_source->field_image) ? $result->_source->field_image[0]->url : '',
+        );
+    }
+
+    $themed_results = es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort);
+    return $themed_results;
 }
 
 /**
@@ -96,7 +85,6 @@ function es_retrieve_theme_the_results($results, $deserialized_data, $search_ter
 
   // Generate next page and back buttons to iterate results.
   $prepped_search_terms = str_replace(' ', '%20', $search_terms);
-
 
   if (intval($deserialized_data->hits->total) > 0 && intval($page) > 1) {
     $previous = "http://" . $domain['subdomain'] . "/retrieve/" . htmlentities($prepped_search_terms) . "/" .
@@ -137,82 +125,95 @@ function _es_retrieve_set_count_of_results_static_variable($num_found) {
 /**
  * Construct queries for Elastic Search.
  */
-function _es_retrieve_make_url($page) {
+function _es_retrieve_make_url() {
 
-  // Get index name
-  $domain = domain_get_domain();
-  $domain_id = $domain['domain_id'];
-  $index = _es_retrieve_get_index_name($domain_id);
+    $search = array(
+      'url' => elasticsearch_connector_cluster_load(elasticsearch_connector_get_default_connector())->url,
+      'index' => ES_NODE_ID,
+    );
 
-  $search_host = '3590b9d403c87e0697b6:8c2e5209a1@f08f4b1b.qb0x.com';
-  $search_port = '30242';
+    $query = $search['url'] . '/' . $search['index'] . '/_search';
 
-  $params = array(
-    'from' => (is_numeric($page) && $page > 1) ? ($page - 1) * 10 : 0,
-    'size' => 10,
-  );
-
-  $query = 'https://' . $search_host . ':' . $search_port . '/' . $index . '/_search?' . http_build_query($params);
-
-  return $query;
+    return $query;
 }
 
 /**
  * Construct postfields for Elastic Search.
  */
-function _es_retrieve_make_post_fields($search_terms, $sort) {
-  if ($sort === 'relevance') { // Sort by relevancy.
-    $postfield = array(
-      'sort' => array('_score' => array('order' => 'desc')),
-      'query' => array(
-        'multi_match' => array(
-          'query' => $search_terms,
-          'type' => 'phrase',
-          'fields' => array('title', 'body.value'),
-          'boost' => 4,
-          'fuzziness' => 0,
-        )
-      ),
-    );
-  }
-  else { // Sort by date.
-    $postfield = array(
-      'sort' => array('created' => array('order' => 'asc')),
-      'query' => array(
-        'multi_match' => array(
-          'query' => $search_terms,
-          'type' => 'phrase',
-          'fields' => array('title', 'body.value'),
-          'boost' => 4,
-          'fuzziness' => 0,
-        )
-      ),
-    );
-  }
-  return json_encode($postfield);
+function _es_retrieve_make_post_fields($search_terms, $domain, $sort, $page) {
+    if ($sort === 'relevance') { // Sort by relevancy.
+        $postfield = array();
+    }
+    else { // Sort by date.
+        $postfield = array(
+          "query" => array(
+            "filtered" => array(
+              "query" => array(
+                "multi_match" => array(
+                  "query" => $search_terms,
+                  "fields" => array(
+                    "title^2",
+                    "body.value",
+                    "author.realname",
+                    "category.categories.name",
+                    "tags.name",
+                  ),
+                ),
+              ),
+              "filter" => array(
+                "term" => array(
+                  "domains" => $domain['domain_id'],
+                ),
+              ),
+            ),
+          ),
+          "size" => 10,
+          'from' => (is_numeric($page) && $page > 1) ? ($page - 1) * 10 : 0,
+          "sort" => array(
+            "created" => array(
+              "order" => "desc",
+            ),
+          ),
+        );
+    }
+    return json_encode($postfield);
 }
 
 /**
  * Request query using cURL handler.
  */
 function _es_retrieve_run_query($url, $post) {
-  var_dump($url);
-  var_dump($post);
 
-  $ch = curl_init();
-  curl_setopt($ch, CURLOPT_URL, $url);
-  curl_setopt($ch, CURLOPT_PORT, 30242);
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
-  curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
-  curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-    'Content-Type: application/json',
-    'Content-Length: ' . strlen($post),
-  ));
-  $raw_data = curl_exec($ch);
-  curl_close($ch);
+    $curl = curl_init();
 
-  return $raw_data;
+    curl_setopt_array($curl, array(
+      CURLOPT_PORT => "30242",
+      CURLOPT_URL => $url,
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_ENCODING => "",
+      CURLOPT_MAXREDIRS => 10,
+      CURLOPT_TIMEOUT => 30,
+      CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+      CURLOPT_CUSTOMREQUEST => "POST",
+      CURLOPT_POSTFIELDS => $post,
+      CURLOPT_HTTPHEADER => array(
+        "cache-control: no-cache",
+        "content-type: application/json",
+        'content-length: ' . strlen($post),
+      ),
+    ));
+
+    $response = curl_exec($curl);
+    $err = curl_error($curl);
+
+    curl_close($curl);
+
+    if ($err) {
+        echo "cURL Error #:" . $err;
+    }
+    else {
+        return $response;
+    }
 }
 
 /**
