@@ -149,35 +149,37 @@ function _es_retrieve_make_post_fields($search_terms, $domain, $sort, $page) {
                 "filtered" => array(
                   "query" => array(
                     "multi_match" => array(
-                      "query" => "police",
+                      "query" => $search_terms,
                       "fields" => array(
                         "title^2",
                         "body.value",
                         "author.realname",
                         "category.categories.name",
-                        "tags.name"
+                        "tags.name",
                       ),
                     ),
                   ),
                   "filter" => array(
                     "term" => array(
-                      "domains" => "41"
+                      "domains" => $domain['domain_id'],
                     ),
                   ),
                 ),
               ),
               "functions" => array(
-                "gauss" => array(
-                  "created" => array(
-                    "scale" => "5d",
-                    "offset" => "2d",
-                    "decay" => 0.5
+                array(
+                  "gauss" => array(
+                    "created" => array(
+                      "scale" => "5d",
+                      "offset" => "2d",
+                      "decay" => 0.5,
+                    ),
                   ),
+                  "weight" => "1.5",
                 ),
-                "weight" => "1.5"
               ),
+              "score_mode" => "multiply",
             ),
-            "score_mode" => "multiply"
           ),
           "size" => 10,
           'from' => (is_numeric($page) && $page > 1) ? ($page - 1) * 10 : 0,
