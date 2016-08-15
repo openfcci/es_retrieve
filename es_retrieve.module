@@ -71,7 +71,7 @@ function es_retrieve_preprocess_search_result(&$variables) {
  * @return string
  */
 function es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort) {
-    $output['prefix']['#markup'] = '<div class="search-results">';
+    $output['prefix']['#markup'] = '<ol class="search-results es_retrieve-results">';
 
     foreach ($results as $result) {
         $output[] = array(
@@ -81,7 +81,7 @@ function es_retrieve_theme_the_results($results, $deserialized_data, $search_ter
         );
     }
 
-    $output['suffix']['#markup'] = '</div>';
+    $output['suffix']['#markup'] = '</ol>';
 
     // Generate next page and back buttons to iterate results.
     $prepped_search_terms = str_replace(' ', '%20', $search_terms);
