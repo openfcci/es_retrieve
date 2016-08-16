@@ -46,7 +46,7 @@ function es_retrieve_get_results($search_terms, $page, $sort) {
         $snippet = !empty($result->_source->body->summary) ? $result->_source->body->summary : $result->_source->body->safe_value;
 
         $results[] = array(
-          'link' => $_SERVER['HTTP_HOST'] . url($result->_source->path),
+          'link' => url($result->_source->path),
           'user' => $result->_source->author->realname, // TODO: update author
           'title' => isset($result->_source->title) ? $result->_source->title : '',
           'date' => isset($result->_source->created) ? $result->_source->created : '',
