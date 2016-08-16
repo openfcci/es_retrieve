@@ -129,7 +129,7 @@ function _es_retrieve_make_url() {
 
     $search = array(
       'url' => elasticsearch_connector_cluster_load(elasticsearch_connector_get_default_connector())->url,
-      'index' => ES_NODE_ID,
+      'index' => ES_INDEX,
     );
 
     $query = $search['url'] . '/' . $search['index'] . '/_search';
