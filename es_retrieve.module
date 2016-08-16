@@ -30,6 +30,7 @@ function es_retrieve_get_results($search_terms, $page, $sort) {
         return '';
     }
     $domain = domain_get_domain();
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 
     // Build elastic search query
     $url = _es_retrieve_make_url();
@@ -42,15 +43,15 @@ function es_retrieve_get_results($search_terms, $page, $sort) {
 
     foreach ($deserialized_data->hits->hits as $result) {
         // set the snippet value
-        $snippet = !empty($result->_source->body->summary) ? $result->_source->body->summary : $result->_source->body->value;
+        $snippet = !empty($result->_source->body->summary) ? $result->_source->body->summary : $result->_source->body->safe_value;
 
         $results[] = array(
-          'link' => url($result->_source->path->alias),
+          'link' => $_SERVER['HTTP_HOST'] . url($result->_source->path),
           'user' => $result->_source->author->realname, // TODO: update author
           'title' => isset($result->_source->title) ? $result->_source->title : '',
           'date' => isset($result->_source->created) ? $result->_source->created : '',
           'snippet' => isset($snippet) ? substr_replace(rtrim(substr($snippet, 0, 252), ' '), '...', 252) : '',
-          'image' => isset($result->_source->field_image) ? $result->_source->field_image[0]->square_300 : '',
+          'image' => isset($result->_source->search_thumb) ? $protocol . $result->_source->search_thumb : '',
         );
     }
 
@@ -71,7 +72,7 @@ function es_retrieve_preprocess_search_result(&$variables) {
  * @return string
  */
 function es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort) {
-    $output['prefix']['#markup'] = '<ol class="search-results es_retrieve-results">';
+    $output['prefix']['#markup'] = '<ol class="search-results">';
 
     foreach ($results as $result) {
         $output[] = array(
