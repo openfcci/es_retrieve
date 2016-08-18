@@ -1,7 +1,7 @@
 <?php
 
 # Declare Constants
-define('ES_SIZE', '10');  // number of items on each page
+define( 'ES_SIZE', '10' );  // number of items on each page
 
 /**
  * @file es_retrieve.module
@@ -15,115 +15,111 @@ include_once 'es_retrieve.index.inc';
  */
 function es_retrieve_menu() {
 
-    $items['retrieve/%/%/%'] = array(
-      'page callback' => 'es_retrieve_get_results',
-      'page arguments' => array(1, 2, 3),
-      'access callback' => TRUE,
-    );
+	$items['retrieve/%/%/%'] = array(
+		'page callback' => 'es_retrieve_get_results',
+		'page arguments' => array( 1, 2, 3 ),
+		'access callback' => true,
+	);
 
-    return $items;
+	return $items;
 }
 
 /**
  * Page callback from es_retrieve_menu().
  */
-function es_retrieve_get_results($search_terms, $page, $sort) {
-// Prevent empty query from being sent to ElasticSearch
-    if (empty($search_terms)) {
-        return '';
-    }
-    $domain = domain_get_domain();
-    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+function es_retrieve_get_results( $search_terms, $page, $sort ) {
+	// Prevent empty query from being sent to ElasticSearch
+	if ( empty( $search_terms ) ) {
+		return '';
+	}
+	$domain = domain_get_domain();
+	$protocol = ( ! empty( $_SERVER['HTTPS'] ) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 
-    // Build elastic search query
-    $url = _es_retrieve_make_url();
-    $post = _es_retrieve_make_post_fields($search_terms, $domain, $sort, $page);
-    $raw_data = _es_retrieve_run_query($url, $post);
-    $deserialized_data = json_decode($raw_data);
+	// Build elastic search query
+	$url = _es_retrieve_make_url();
+	$post = _es_retrieve_make_post_fields( $search_terms, $domain, $sort, $page );
+	$raw_data = _es_retrieve_run_query( $url, $post );
+	$deserialized_data = json_decode( $raw_data );
 
-    _es_retrieve_set_count_of_results_static_variable($deserialized_data->hits->total);
-    $results = array();
+	_es_retrieve_set_count_of_results_static_variable( $deserialized_data->hits->total );
+	$results = array();
 
-    foreach ($deserialized_data->hits->hits as $result) {
-        // set the snippet value
-        $snippet = !empty($result->_source->body->summary) ? $result->_source->body->summary : $result->_source->body->safe_value;
+	foreach ( $deserialized_data->hits->hits as $result ) {
+	    // set the snippet value
+	    $snippet = ! empty( $result->_source->body->summary ) ? $result->_source->body->summary : $result->_source->body->safe_value;
 
-        $results[] = array(
-          'link' => url($result->_source->path),
-          'user' => $result->_source->author->realname, // TODO: update author
-          'title' => isset($result->_source->title) ? $result->_source->title : '',
-          'date' => isset($result->_source->created) ? $result->_source->created : '',
-          'snippet' => isset($snippet) ? substr_replace(rtrim(substr($snippet, 0, 252), ' '), '...', 252) : '',
-          'image' => isset($result->_source->search_thumb) ? $protocol . $result->_source->search_thumb : '',
-        );
-    }
+	    $results[] = array(
+	      'link' => url( $result->_source->path ),
+	      'user' => $result->_source->author->realname, // TODO: update author
+	      'title' => isset( $result->_source->title ) ? $result->_source->title : '',
+	      'date' => isset( $result->_source->created ) ? $result->_source->created : '',
+	      'snippet' => isset( $snippet ) ? substr_replace( rtrim( substr( $snippet, 0, 252 ), ' ' ), '...', 252 ) : '',
+	      'image' => isset( $result->_source->search_thumb ) ? $protocol . $result->_source->search_thumb : '',
+	    );
+	}
 
-    $themed_results = es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort);
-    return $themed_results;
+	$themed_results = es_retrieve_theme_the_results( $results, $deserialized_data, $search_terms, $domain, $page, $sort );
+	return $themed_results;
 }
 
 /**
  * Implementation of hook_preprocess_HOOK().
  */
-function es_retrieve_preprocess_search_result(&$variables) {
-    $result = $variables['result'];
-    $variables['info_split']['image'] = $result['image'];
+function es_retrieve_preprocess_search_result( &$variables ) {
+	$result = $variables['result'];
+	$variables['info_split']['image'] = $result['image'];
 }
 
 /**
  * Creates theme for Elastic Search Results
  * @return string
  */
-function es_retrieve_theme_the_results($results, $deserialized_data, $search_terms, $domain, $page, $sort) {
-    $output['prefix']['#markup'] = '<ol class="search-results">';
+function es_retrieve_theme_the_results( $results, $deserialized_data, $search_terms, $domain, $page, $sort ) {
+	$output['prefix']['#markup'] = '<ol class="search-results">';
 
-    foreach ($results as $result) {
-        $output[] = array(
-          '#theme' => 'search_result',
-          '#result' => $result,
-          '#module' => 'es_retrieve',
-        );
-    }
+	foreach ( $results as $result ) {
+	    $output[] = array(
+	      '#theme' => 'search_result',
+	      '#result' => $result,
+	      '#module' => 'es_retrieve',
+	    );
+	}
 
-    $output['suffix']['#markup'] = '</ol>';
+	$output['suffix']['#markup'] = '</ol>';
 
-    // Generate next page and back buttons to iterate results.
-    $prepped_search_terms = str_replace(' ', '%20', $search_terms);
+	// Generate next page and back buttons to iterate results.
+	$prepped_search_terms = str_replace( ' ', '%20', $search_terms );
 
-    if (intval($deserialized_data->hits->total) > 0 && intval($page) > 1) {
-        $previous = "http://" . $domain['subdomain'] . "/retrieve/" . htmlentities($prepped_search_terms) . "/" .
-            strval(intval($page) - 1 . "/" . check_plain($sort));
-        $previous_button = '<div class="fcc-paging"><a class="fcc-previous" href="' . $previous . '">Previous</a>';
-        $output['suffix']['#markup'] .= $previous_button;
-    }
-    else {
-        $output['suffix']['#markup'] .= '<div class="fcc-paging"><span class="fcc-first">Previous</span>';
-    }
+	if ( intval( $deserialized_data->hits->total ) > 0 && intval( $page ) > 1) {
+		$previous = 'http://' . $domain['subdomain'] . '/retrieve/' . htmlentities( $prepped_search_terms ) . '/' . strval( intval( $page ) - 1 . '/' . check_plain( $sort ) );
+		$previous_button = '<div class="fcc-paging"><a class="fcc-previous" href="' . $previous . '">Previous</a>';
+		$output['suffix']['#markup'] .= $previous_button;
+	} else {
+		$output['suffix']['#markup'] .= '<div class="fcc-paging"><span class="fcc-first">Previous</span>';
+	}
 
-    if (intval($deserialized_data->hits->total) > intval(($page)) && intval($deserialized_data->hits->total) > intval(($page) * ES_SIZE)) {
-        $next = "http://" . $domain['subdomain'] . "/retrieve/" . htmlentities($prepped_search_terms) . "/" .
-            strval(intval($page) + 1 . "/" . check_plain($sort));
-        $next_button = '<a class="fcc-next" href="' . $next . '">Next</a></div>';
-        $output['suffix']['#markup'] .= $next_button;
-    }
-    else {
-        $output['suffix']['#markup'] .= '<span class="fcc-last">Next</span></div>';
-    }
+	if ( intval( $deserialized_data->hits->total ) > intval( ( $page ) ) && intval( $deserialized_data->hits->total ) > intval( ($page ) * ES_SIZE ) ) {
+		$next = 'http://' . $domain['subdomain'] . '/retrieve/' . htmlentities( $prepped_search_terms ) . '/' . strval( intval( $page ) + 1 . '/' . check_plain( $sort ) );
+		$next_button = '<a class="fcc-next" href="' . $next . '">Next</a></div>';
+		$output['suffix']['#markup'] .= $next_button;
+	} else {
+		$output['suffix']['#markup'] .= '<span class="fcc-last">Next</span></div>';
+	}
 
-    return $output;
+	return $output;
 }
 
 /**
  * Create a static variable listing the count of results from Elastic Search.
  */
-function _es_retrieve_set_count_of_results_static_variable($num_found) {
-    $count = &drupal_static(__FUNCTION__);
+function _es_retrieve_set_count_of_results_static_variable( $num_found ) {
+	$count = &drupal_static( __FUNCTION__ );
 
-    if (!isset($count)) {
-        $count = number_format($num_found);
-    }
+	if ( ! isset( $count ) {
+		$count = number_format( $num_found );
+	}
 
-    return $count;
+	return $count;
 }
 
 /**
@@ -131,134 +127,131 @@ function _es_retrieve_set_count_of_results_static_variable($num_found) {
  */
 function _es_retrieve_make_url() {
 
-    $search = array(
-      'url' => elasticsearch_connector_cluster_load(elasticsearch_connector_get_default_connector())->url,
-      'index' => ES_INDEX,
-    );
+	$search = array(
+	  'url' => variable_get( 'es_url', '' ),
+	  'index' => variable_get( 'es_index', '' ),
+	);
 
-    $query = $search['url'] . '/' . $search['index'] . '/_search';
+	$query = $search['url'] . '/' . $search['index'] . '/_search';
 
-    return $query;
+	return $query;
 }
 
 /**
  * Construct postfields for Elastic Search.
  */
-function _es_retrieve_make_post_fields($search_terms, $domain, $sort, $page) {
-    if ($sort === 'relevance') { // Sort by relevancy.
-        $postfield = array(
-          "query" => array(
-            "function_score" => array(
-              "query" => array(
-                "filtered" => array(
-                  "query" => array(
-                    "multi_match" => array(
-                      "query" => $search_terms,
-                      "fields" => array(
-                        "title^2",
-                        "body.value",
-                        "author.realname",
-                        "category.categories.name",
-                        "tags.name",
-                      ),
-                    ),
-                  ),
-                  "filter" => array(
-                    "term" => array(
-                      "domains" => $domain['domain_id'],
-                    ),
-                  ),
-                ),
-              ),
-              "functions" => array(
-                array(
-                  "gauss" => array(
-                    "created" => array(
-                      "scale" => "5d",
-                      "offset" => "2d",
-                      "decay" => 0.5,
-                    ),
-                  ),
-                  "weight" => "1.5",
-                ),
-              ),
-              "score_mode" => "multiply",
-            ),
-          ),
-          "size" => ES_SIZE,
-          'from' => (is_numeric($page) && $page > 1) ? ($page - 1) * ES_SIZE : 0,
-        );
-    }
-    else { // Sort by date.
-        $postfield = array(
-          "query" => array(
-            "filtered" => array(
-              "query" => array(
-                "multi_match" => array(
-                  "query" => $search_terms,
-                  "fields" => array(
-                    "title^2",
-                    "body.value",
-                    "author.realname",
-                    "category.categories.name",
-                    "tags.name",
-                  ),
-                ),
-              ),
-              "filter" => array(
-                "term" => array(
-                  "domains" => $domain['domain_id'],
-                ),
-              ),
-            ),
-          ),
-          "size" => ES_SIZE,
-          'from' => (is_numeric($page) && $page > 1) ? ($page - 1) * ES_SIZE : 0,
-          "sort" => array(
-            "created" => array(
-              "order" => "desc",
-            ),
-          ),
-        );
-    }
-    return json_encode($postfield);
+function _es_retrieve_make_post_fields( $search_terms, $domain, $sort, $page ) {
+		if ( $sort === 'relevance' ) { // Sort by relevancy.
+		    $postfield = array(
+		      'query' => array(
+		        'function_score' => array(
+		          'query' => array(
+		            'filtered' => array(
+		              'query' => array(
+		                'multi_match' => array(
+		                  'query' => $search_terms,
+		                  'fields' => array(
+		                    'title^2',
+		                    'body.value',
+		                    'author.realname',
+		                    'category.categories.name',
+		                    'tags.name',
+		                  ),
+		                ),
+		              ),
+		              'filter' => array(
+		                'term' => array(
+		                  'domains' => $domain['domain_id'],
+		                ),
+		              ),
+		            ),
+		          ),
+		          'functions' => array(
+		            array(
+		              'gauss' => array(
+		                'created' => array(
+		                  'scale' => '5d',
+		                  'offset' => '2d',
+		                  'decay' => 0.5,
+		                ),
+		              ),
+		              'weight' => '1.5',
+		            ),
+		          ),
+		          'score_mode' => 'multiply',
+		        ),
+		      ),
+		      'size' => ES_SIZE,
+		      'from' => ( is_numeric($page) && $page > 1 ) ? ( $page - 1 ) * ES_SIZE : 0,
+		    );
+		} else { // Sort by date.
+			$postfield = array(
+			  'query' => array(
+			    'filtered' => array(
+			      'query' => array(
+			        'multi_match' => array(
+			          'query' => $search_terms,
+			          'fields' => array(
+			            'title^2',
+			            'body.value',
+			            'author.realname',
+			            'category.categories.name',
+			            'tags.name',
+			          ),
+			        ),
+			      ),
+			      'filter' => array(
+			        'term' => array(
+			          'domains' => $domain['domain_id'],
+			        ),
+			      ),
+			    ),
+			  ),
+			  'size' => ES_SIZE,
+			  'from' => ( is_numeric( $page ) && $page > 1 ) ? ( $page - 1 ) * ES_SIZE : 0,
+			  'sort' => array(
+			    'created' => array(
+			      'order' => 'desc',
+			    ),
+			  ),
+			);
+	}
+	return json_encode( $postfield );
 }
 
 /**
  * Request query using cURL handler.
  */
-function _es_retrieve_run_query($url, $post) {
+function _es_retrieve_run_query( $url, $post ) {
 
-    $curl = curl_init();
+	$curl = curl_init();
 
-    curl_setopt_array($curl, array(
-      CURLOPT_PORT => "30242",
-      CURLOPT_URL => $url,
-      CURLOPT_RETURNTRANSFER => true,
-      CURLOPT_ENCODING => "",
-      CURLOPT_MAXREDIRS => 10,
-      CURLOPT_TIMEOUT => 30,
-      CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-      CURLOPT_CUSTOMREQUEST => "POST",
-      CURLOPT_POSTFIELDS => $post,
-      CURLOPT_HTTPHEADER => array(
-        "cache-control: no-cache",
-        "content-type: application/json",
-        'content-length: ' . strlen($post),
-      ),
-    ));
+	curl_setopt_array( $curl, array(
+		CURLOPT_PORT => variable_get( 'es_port', '' ),
+		CURLOPT_URL => $url,
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_ENCODING => '',
+		CURLOPT_MAXREDIRS => 10,
+		CURLOPT_TIMEOUT => 30,
+		CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+		CURLOPT_CUSTOMREQUEST => 'POST',
+		CURLOPT_POSTFIELDS => $post,
+		CURLOPT_HTTPHEADER => array(
+			'cache-control: no-cache',
+			'content-type: application/json',
+		  'content-length: ' . strlen( $post ),
+		),
+	));
 
-    $response = curl_exec($curl);
-    $err = curl_error($curl);
+	$response = curl_exec( $curl );
+	$err = curl_error( $curl );
+	curl_close( $curl );
 
-    curl_close($curl);
-
-    if ($err) {
-        echo "cURL Error #:" . $err;
-    }
-    else {
-        return $response;
-    }
+	if ( $err ) {
+		echo 'cURL Error #:' . $err;
+	} else {
+		return $response;
+	}
 }
 
 /**
@@ -268,20 +261,18 @@ function _es_retrieve_run_query($url, $post) {
  *
  * Reference: https://www.drupal.org/node/968002#comment-4573218.
  */
-function es_retrieve_page_alter(&$page) {
+function es_retrieve_page_alter( &$page ) {
+	// This assumes everything being output in the "content" page region.
 
-    // This assumes everything being output in the "content" page region.
-    // Logged in
-    if (!empty($page['content']['system_main']['content']['search_form'])) {
+	// Logged in
+	if ( ! empty( $page['content']['system_main']['content']['search_form'] ) ) {
+	    unset( $page['content']['system_main']['content']['search_form'] );
+	}
 
-        unset($page['content']['system_main']['content']['search_form']);
-    }
-
-    // Not logged in
-    if (!empty($page['content']['system_main']['search_form'])) {
-
-        unset($page['content']['system_main']['search_form']);
-    }
+	// Not logged in
+	if ( ! empty( $page['content']['system_main']['search_form'] ) ) {
+	    unset( $page['content']['system_main']['search_form'] );
+	}
 }
 
 /**
@@ -289,61 +280,61 @@ function es_retrieve_page_alter(&$page) {
  */
 function es_retrieve_block_info() {
 
-    $blocks['elastic_search_results_count'] = array(
-      'info' => t('Display the count of search results.'),
-      'cache' => DRUPAL_NO_CACHE
-    );
+	$blocks['elastic_search_results_count'] = array(
+	  'info' => t( 'Display the count of search results.' ),
+	  'cache' => DRUPAL_NO_CACHE,
+	);
 
-    $blocks['elastic_search_modify_results'] = array(
-      'info' => t('Modify the search results.'),
-      'cache' => DRUPAL_NO_CACHE
-    );
+	$blocks['elastic_search_modify_results'] = array(
+	  'info' => t( 'Modify the search results.' ),
+	  'cache' => DRUPAL_NO_CACHE,
+	);
 
-    return $blocks;
+	return $blocks;
 }
 
 /**
  * Implements hook_block_view().
  */
-function es_retrieve_block_view($delta = '') {
+function es_retrieve_block_view( $delta = '' ) {
 
-    $block = array();
+	$block = array();
 
-    switch ($delta) {
+	switch ( $delta ) {
 
-        case 'elastic_search_results_count':
-            $block['subject'] = NULL;
-            $block['content'] = array(
-              '#type' => 'markup',
-              '#markup' => es_retrieve_get_search_results_count(),
-            );
-            break;
+	    case 'elastic_search_results_count':
+	        $block['subject'] = null;
+	        $block['content'] = array(
+	          '#type' => 'markup',
+	          '#markup' => es_retrieve_get_search_results_count(),
+	        );
+	        break;
 
-        case 'elastic_search_modify_results':
-            $block['subject'] = NULL;
-            $block['content'] = drupal_get_form('es_retrieve_form');
-            break;
-    }
+	    case 'elastic_search_modify_results':
+	        $block['subject'] = null;
+	        $block['content'] = drupal_get_form( 'es_retrieve_form' );
+	        break;
+	}
 
-    return $block;
+	return $block;
 }
 
 /**
  * Implements hook_theme().
  */
-function es_retrieve_theme($existing, $type, $theme, $path) {
+function es_retrieve_theme( $existing, $type, $theme, $path ) {
 
-    $theme = array(
-      'search_result_count' => array(
-        'template' => 'es_retrieve_search_result_count_block',
-        'variables' => array(
-          'data' => NULL,
-          'title' => '',
-        ),
-      ),
-    );
+	$theme = array(
+	  'search_result_count' => array(
+	    'template' => 'es_retrieve_search_result_count_block',
+	    'variables' => array(
+	      'data' => null,
+	      'title' => '',
+	    ),
+	  ),
+	);
 
-    return $theme;
+	return $theme;
 }
 
 /**
@@ -352,112 +343,111 @@ function es_retrieve_theme($existing, $type, $theme, $path) {
  * @return string markup for the block that displays the count of search results.
  */
 function es_retrieve_get_search_results_count() {
-    $data = array(
-      'count' => _es_retrieve_set_count_of_results_static_variable(0),
-    );
-    $themed_content = theme('search_result_count', $data);
+	$data = array(
+		'count' => _es_retrieve_set_count_of_results_static_variable( 0 ),
+	);
+	$themed_content = theme( 'search_result_count', $data );
 
-    return $themed_content;
+	return $themed_content;
 }
 
 /**
  * Implements hook_form_alter().
  */
-function es_retrieve_form_alter(&$form, &$form_state, $form_id) {
-    if ($form_id == 'search_block_form') {
+function es_retrieve_form_alter( &$form, &$form_state, $form_id ) {
+	if ( $form_id == 'search_block_form' ) {
 
-        // Override the default search_block_form submit function.
-        $form['#submit']['search_block_form'] = 'es_retrieve_elastic_search_form_submit';
+	    // Override the default search_block_form submit function.
+	    $form['#submit']['search_block_form'] = 'es_retrieve_elastic_search_form_submit';
 
-        // Put the search terms in the search form on the results page only.
-        $path = current_path();
-        $matches = preg_match("/(retrieve\\/.*\\/.*)/us", $path);
+	    // Put the search terms in the search form on the results page only.
+	    $path = current_path();
+	    $matches = preg_match( '/(retrieve\\/.*\\/.*)/us', $path );
 
-        if (!empty($matches)) {
-            $exploded_path = explode('/', $path);
-            $middle = 1;
-            $search_terms = str_replace('retrieve/', '', $exploded_path[$middle]);
-            $form['search_block_form']['#default_value'] = $search_terms;
-        }
-    }
+	    if ( ! empty( $matches ) ) {
+	        $exploded_path = explode( '/', $path );
+	        $middle = 1;
+	        $search_terms = str_replace( 'retrieve/', '', $exploded_path[ $middle ] );
+	        $form['search_block_form']['#default_value'] = $search_terms;
+	    }
+	}
 }
 
 /**
  * Much of this function was copied from search_box_form_submit of search.module.
  */
-function es_retrieve_elastic_search_form_submit($form, &$form_state) {
-    // The search form relies on control of the redirect destination for its
-    // functionality, so we override any static destination set in the request,
-    // for example by drupal_access_denied() or drupal_not_found()
-    // (see http://drupal.org/node/292565).
-    if (isset($_GET['destination'])) {
-        unset($_GET['destination']);
-    }
+function es_retrieve_elastic_search_form_submit( $form, &$form_state ) {
+	// The search form relies on control of the redirect destination for its
+	// functionality, so we override any static destination set in the request,
+	// for example by drupal_access_denied() or drupal_not_found()
+	// (see http://drupal.org/node/292565).
+	if ( isset( $_GET['destination'] ) ) {
+	    unset( $_GET['destination'] );
+	}
 
-    // Check to see if the form was submitted empty.
-    // If it is empty, display an error message.
-    // (This method is used instead of setting #required to TRUE for this field
-    // because that results in a confusing error message.  It would say a plain
-    // "field is required" because the search keywords field has no title.
-    // The error message would also complain about a missing #title field.)
-    if ($form_state['values']['search_block_form'] == '') {
-        form_set_error('keys', t('Please enter some keywords.'));
-    }
+	// Check to see if the form was submitted empty.
+	// If it is empty, display an error message.
+	// (This method is used instead of setting #required to TRUE for this field
+	// because that results in a confusing error message.  It would say a plain
+	// "field is required" because the search keywords field has no title.
+	// The error message would also complain about a missing #title field.)
+	if ( $form_state['values']['search_block_form'] == '' ) {
+		form_set_error( 'keys', t( 'Please enter some keywords.' ) );
+	}
 
-    $form_id = $form['form_id']['#value'];
-    // Redirect to the first page of Google Custom Search Results.
-    //$form_state['redirect'] = 'retrieve/' . trim($form_state['values'][$form_id]) . '/' . 1 . '/date';
-    $form_state['redirect'] = 'retrieve/' . trim($form_state['values'][$form_id]) . '/' . 1 . '/relevance';
+	$form_id = $form['form_id']['#value'];
+	// Redirect to the first page of Google Custom Search Results.
+	//$form_state['redirect'] = 'retrieve/' . trim($form_state['values'][$form_id]) . '/' . 1 . '/date';
+	$form_state['redirect'] = 'retrieve/' . trim( $form_state['values'][ $form_id ] ) . '/' . 1 . '/relevance';
 }
 
 /**
  * Implements hook_form().
  */
-function es_retrieve_form($form, &$form_state) {
-    $path = current_path();
-    $exploded_path = explode('/', $path);
-    $sort = end($exploded_path);
+function es_retrieve_form( $form, &$form_state ) {
+	$path = current_path();
+	$exploded_path = explode( '/', $path );
+	$sort = end( $exploded_path );
 
-    //$default_sort_value = ($sort === 'date') ? '1' : '0';
-    $default_sort_value = ($sort === 'relevance') ? '0' : '1';
+	//$default_sort_value = ($sort === 'date') ? '1' : '0';
+	$default_sort_value = ( $sort === 'relevance' ) ? '0' : '1';
 
-    $display_order_options = array('0' => t('Relevancy'), '1' => t('Date'));
+	$display_order_options = array( '0' => t( 'Relevancy' ), '1' => t( 'Date' ) );
 
-    $form['retrieve']['relevancy'] = array(
-      '#type' => 'select',
-      '#options' => $display_order_options,
-      '#default_value' => $default_sort_value,
-      '#title' => 'Sorted by ',
-      '#prefix' => '<div class="retrieve-display-order">',
-      '#suffix' => '</div>',
-    );
+	$form['retrieve']['relevancy'] = array(
+	  '#type' => 'select',
+	  '#options' => $display_order_options,
+	  '#default_value' => $default_sort_value,
+	  '#title' => 'Sorted by ',
+	  '#prefix' => '<div class="retrieve-display-order">',
+	  '#suffix' => '</div>',
+	);
 
-    $form['retrieve']['update_results'] = array(
-      '#type' => 'submit',
-      '#value' => 'Update',
-      '#prefix' => '<div class="retrieve-submit-button">',
-      '#suffix' => '</div>',
-    );
+	$form['retrieve']['update_results'] = array(
+	  '#type' => 'submit',
+	  '#value' => 'Update',
+	  '#prefix' => '<div class="retrieve-submit-button">',
+	  '#suffix' => '</div>',
+	);
 
-    $form['#submit'][] = 'es_retrieve_form_submit';
+	$form['#submit'][] = 'es_retrieve_form_submit';
 
-    return $form;
+	return $form;
 }
 
 /**
  * retrieve_relevancy form submit callback
  */
-function es_retrieve_form_submit($form, &$form_state) {
+function es_retrieve_form_submit( $form, &$form_state ) {
 
-    $path = current_path();
-    $exploded_path = explode('/', $path);
-    $search_terms = $exploded_path[1];
-    $page = $exploded_path[2];
+	$path = current_path();
+	$exploded_path = explode( '/', $path );
+	$search_terms = $exploded_path[1];
+	$page = $exploded_path[2];
 
-    if ($form_state['input']['relevancy'] === '1') { // date sort
-        drupal_goto('retrieve/' . $search_terms . '/' . $page . '/date');
-    }
-    else { // Relevancy sort
-        drupal_goto('retrieve/' . $search_terms . '/' . $page . '/relevance');
-    }
+	if ( $form_state['input']['relevancy'] === '1' ) { // date sort
+		drupal_goto( 'retrieve/' . $search_terms . '/' . $page . '/date' );
+	} else { // Relevancy sort
+	    drupal_goto( 'retrieve/' . $search_terms . '/' . $page . '/relevance' );
+	}
 }
