@@ -115,7 +115,7 @@ function es_retrieve_theme_the_results( $results, $deserialized_data, $search_te
 function _es_retrieve_set_count_of_results_static_variable( $num_found ) {
 	$count = &drupal_static( __FUNCTION__ );
 
-	if ( ! isset( $count ) {
+	if ( ! isset( $count ) ) {
 		$count = number_format( $num_found );
 	}
 
