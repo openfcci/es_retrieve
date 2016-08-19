@@ -138,9 +138,6 @@ function _es_retrieve_make_url() {
 	}
 
 	$search = array(
-	  //'url' => variable_get( 'es_url', '' ),
-	  //'index' => variable_get( 'es_index', '' ),
-		// TODO replace with variables framework
 		'url' => $es_url,
 	  'index' => $es_index,
 	);
@@ -245,8 +242,7 @@ function _es_retrieve_run_query( $url, $post ) {
 	$curl = curl_init();
 
 	curl_setopt_array( $curl, array(
-		//CURLOPT_PORT => variable_get( 'es_port', '' ),
-		CURLOPT_PORT => $es_port, // TODO replace with variables framework
+		CURLOPT_PORT => $es_port,
 		CURLOPT_URL => $url,
 		CURLOPT_RETURNTRANSFER => true,
 		CURLOPT_ENCODING => '',
