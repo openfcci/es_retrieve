@@ -127,9 +127,22 @@ function _es_retrieve_set_count_of_results_static_variable( $num_found ) {
  */
 function _es_retrieve_make_url() {
 
+	$es_url = variable_get( 'es_url', '' );
+	if ( ! $es_url ) {
+		$es_url = ES_URL;
+	}
+
+	$es_index = variable_get( 'es_index', '' );
+	if ( ! $es_index ) {
+		$es_index = ES_INDEX;
+	}
+
 	$search = array(
-	  'url' => variable_get( 'es_url', '' ),
-	  'index' => variable_get( 'es_index', '' ),
+	  //'url' => variable_get( 'es_url', '' ),
+	  //'index' => variable_get( 'es_index', '' ),
+		// TODO replace with variables framework
+		'url' => $es_url,
+	  'index' => $es_index,
 	);
 
 	$query = $search['url'] . '/' . $search['index'] . '/_search';
@@ -224,10 +237,16 @@ function _es_retrieve_make_post_fields( $search_terms, $domain, $sort, $page ) {
  */
 function _es_retrieve_run_query( $url, $post ) {
 
+	$es_port = variable_get( 'es_port', '' );
+	if ( ! $es_port ) {
+		$es_port = ES_PORT;
+	}
+
 	$curl = curl_init();
 
 	curl_setopt_array( $curl, array(
-		CURLOPT_PORT => variable_get( 'es_port', '' ),
+		//CURLOPT_PORT => variable_get( 'es_port', '' ),
+		CURLOPT_PORT => $es_port, // TODO replace with variables framework
 		CURLOPT_URL => $url,
 		CURLOPT_RETURNTRANSFER => true,
 		CURLOPT_ENCODING => '',
