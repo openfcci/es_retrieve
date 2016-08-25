@@ -150,97 +150,98 @@ function _es_retrieve_make_url() {
 /**
  * Construct postfields for Elastic Search.
  */
-function _es_retrieve_make_post_fields( $search_terms, $domain, $sort, $page ) {
-	if ( 'relevance' === $sort ) {
-		    $postfield = array(
-		      'query' => array(
-		        'function_score' => array(
-		          'query' => array(
-		            'filtered' => array(
-		              'query' => array(
-		                'multi_match' => array(
-		                  'query' => $search_terms,
-		                  'fields' => array(
-		                    'title^2',
-		                    'body.value',
-		                    'author.realname',
-		                    'category.name',
-		                    'tags.name',
-		                  ),
-		                ),
-		              ),
-									'filter' => array(
-										'bool' => array(
-											'must'  => array(
-												array(
-													'term' => array( 'domains' => $domain ),
-												),
-												array(
-													'term' => array( 'status' => 1 ),
-												),
-											),
-										),
-									),
-		            ),
-		          ),
-		          'functions' => array(
-		            array(
-		              'gauss' => array(
-		                'created' => array(
-		                  'scale' => '5d',
-		                  'offset' => '2d',
-		                  'decay' => 0.5,
-		                ),
-		              ),
-		              'weight' => '1.5',
-		            ),
-		          ),
-		          'score_mode' => 'multiply',
-		        ),
-		      ),
-		      'size' => ES_SIZE,
-		      'from' => ( is_numeric( $page ) && $page > 1 ) ? ( $page - 1 ) * ES_SIZE : 0,
-		    );
-		} else {
-					$postfield = array(
-						'query' => array(
-							'filtered' => array(
-					      'query' => array(
-					        'multi_match' => array(
-					          'query' => $search_terms,
-					          'fields' => array(
-					            'title^2',
-					            'body.value',
-					            'author.realname',
-					            'category.name',
-					            'tags.name',
-					          ),
-					        ),
-					      ),
-								'filter' => array(
-									'bool' => array(
-										'must'  => array(
-											array(
-												'term' => array( 'domains' => $domain ),
-											),
-											array(
-												'term' => array( 'status' => 1 ),
-											),
-										),
-									),
-								),
-					    ),
-					  ),
-					  'size' => ES_SIZE,
-					  'from' => ( is_numeric( $page ) && $page > 1 ) ? ( $page - 1 ) * ES_SIZE : 0,
-					  'sort' => array(
-					    'created' => array(
-					      'order' => 'desc',
-					    ),
-					  ),
-					);
-	}
-	return json_encode( $postfield );
+function _es_retrieve_make_post_fields($search_terms, $domain, $sort, $page) {
+    if ('relevance' === $sort) {
+        $postfield = array(
+          'query' => array(
+            'function_score' => array(
+              'query' => array(
+                'filtered' => array(
+                  'query' => array(
+                    'multi_match' => array(
+                      'query' => $search_terms,
+                      'fields' => array(
+                        'title^2',
+                        'body.value',
+                        'author.realname',
+                        'category.name',
+                        'tags.name',
+                      ),
+                    ),
+                  ),
+                  'filter' => array(
+                    'bool' => array(
+                      'must' => array(
+                        array(
+                          'term' => array('domains' => $domain['domain_id']),
+                        ),
+                        array(
+                          'term' => array('status' => 1),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              'functions' => array(
+                array(
+                  'gauss' => array(
+                    'created' => array(
+                      'scale' => '5d',
+                      'offset' => '2d',
+                      'decay' => 0.5,
+                    ),
+                  ),
+                  'weight' => '1.5',
+                ),
+              ),
+              'score_mode' => 'multiply',
+            ),
+          ),
+          'size' => ES_SIZE,
+          'from' => ( is_numeric($page) && $page > 1 ) ? ( $page - 1 ) * ES_SIZE : 0,
+        );
+    }
+    else {
+        $postfield = array(
+          'query' => array(
+            'filtered' => array(
+              'query' => array(
+                'multi_match' => array(
+                  'query' => $search_terms,
+                  'fields' => array(
+                    'title^2',
+                    'body.value',
+                    'author.realname',
+                    'category.name',
+                    'tags.name',
+                  ),
+                ),
+              ),
+              'filter' => array(
+                'bool' => array(
+                  'must' => array(
+                    array(
+                      'term' => array('domains' => $domain['domain_id']),
+                    ),
+                    array(
+                      'term' => array('status' => 1),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          'size' => ES_SIZE,
+          'from' => ( is_numeric($page) && $page > 1 ) ? ( $page - 1 ) * ES_SIZE : 0,
+          'sort' => array(
+            'created' => array(
+              'order' => 'desc',
+            ),
+          ),
+        );
+    }
+    return json_encode($postfield);
 }
 
 /**
