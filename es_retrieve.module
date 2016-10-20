@@ -32,6 +32,14 @@ function es_retrieve_get_results( $search_terms, $page, $sort ) {
 	if ( empty( $search_terms ) ) {
 		return '';
 	}
+
+        // Invalidate email strings to satisfy ADX
+        if (strpos($search_terms, chr(64)) !== false) {
+            $search_terms =  substr($search_terms, 0, strpos($search_terms, chr(64)));
+            $url = 'retrieve/' . $search_terms . '/' . $page . '/' . $sort;
+            drupal_goto($url);
+        }
+
 	$domain = domain_get_domain();
 	$protocol = ( ! empty( $_SERVER['HTTPS'] ) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
 
