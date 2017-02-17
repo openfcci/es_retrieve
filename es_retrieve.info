@@ -1,6 +1,6 @@
 name = ElasticSearch Retrieve
 description = Custom Elastic Search, settings for content type search include, and associated blocks.
-version = 1.0.2-16.09.06
+version = 1.0.3-17.02.17
 core = 7.x
 package = Features
 dependencies[] = block
