@@ -137,12 +137,12 @@ function _es_retrieve_make_url() {
 
 	$es_url = variable_get( 'es_url', '' );
 	if ( ! $es_url ) {
-		$es_url = ES_URL;
+		$es_url = FCC_ELASTICSEARCH_INDEXER_ES_URL;
 	}
 
 	$es_index = variable_get( 'es_index', '' );
 	if ( ! $es_index ) {
-		$es_index = ES_INDEX;
+		$es_index = FCC_ELASTICSEARCH_INDEXER_ES_INDEX;
 	}
 
 	$search = array(
